@@ -80,18 +80,18 @@ async def check(ctx):
                 recommendation = "Risk OFF - 100% SPY or 1x (100% SPY)"
         
         embed.add_field(name="MFEA Recommendation", value=recommendation, inline=False)
-        embed.set_footer(text="Try !help for other commands.")
+        embed.set_footer(text="Try !commands for other commands.")
         await ctx.send(embed=embed)
     except ValueError as e:
         await ctx.send(f"Error fetching data: {e}")
     except Exception as e:
         await ctx.send(f"An unexpected error occurred: {e}")
 
-@bot.command()
-async def help(ctx):
-    embed = discord.Embed(title="MFEA Bot Help", color=discord.Color.green())
+@bot.command(name="commands")
+async def commands_list(ctx):
+    embed = discord.Embed(title="MFEA Bot Commands", color=discord.Color.green())
     embed.add_field(name="!check", value="Fetches market data and provides recommendations.", inline=False)
-    embed.add_field(name="!help", value="Shows this help interface.", inline=False)
+    embed.add_field(name="!commands", value="Shows this commands interface.", inline=False)
     embed.add_field(name="!links", value="Provides a link to testfol.io.", inline=False)
     embed.add_field(name="!ping", value="Checks if the bot is online and responsive.", inline=False)
     await ctx.send(embed=embed)
@@ -106,3 +106,4 @@ async def ping(ctx):
 
 if __name__ == "__main__":
     bot.run(os.getenv("DISCORD_BOT_TOKEN"))
+
