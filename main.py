@@ -1,19 +1,6 @@
 import discord
 from discord.ext import commands
 import os
-import threading
-from flask import Flask
-
-# Flask web server for health checks
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "The bot is running!"
-
-def run_flask():
-    port = int(os.getenv("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
 
 # Discord bot setup
 intents = discord.Intents.default()
@@ -37,6 +24,4 @@ async def ping(ctx):
     await ctx.send("Pong!")
 
 if __name__ == "__main__":
-    # Run Flask server and Discord bot concurrently
-    threading.Thread(target=run_flask).start()
     bot.run(os.getenv("DISCORD_BOT_TOKEN"))
