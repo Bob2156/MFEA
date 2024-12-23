@@ -1,7 +1,5 @@
 import discord
 from discord.ext import commands
-from discord import ButtonStyle
-from discord.ui import View, Button
 import yfinance as yf
 import requests
 from bs4 import BeautifulSoup
@@ -12,7 +10,7 @@ import threading
 # Discord bot setup
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
@@ -53,41 +51,76 @@ def fetch_treasury_rate():
             return round(float(rate_text), 2)
     raise ValueError("Failed to fetch treasury rate. Verify the source URL or HTML structure.")
 
-@bot.event
-async def on_message(message):
-    if bot.user.mentioned_in(message):
-        # Show an interactive menu when the bot is mentioned
-        view = View()
+# Button-based interface
+class MFEAView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+    
+    @discord.ui.button(label="Check Market Data", style=discord.ButtonStyle.blurple)
+    async def check_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        try:
+            last_close, sma_220, volatility = fetch_sma_and_volatility()
+            treasury_rate = fetch_treasury_rate()
 
-        view.add_item(Button(label="Check Market Data", style=ButtonStyle.primary, custom_id="check"))
-        view.add_item(Button(label="Commands List", style=ButtonStyle.secondary, custom_id="commands"))
-        view.add_item(Button(label="Links", style=ButtonStyle.link, url="https://testfol.io"))
-        view.add_item(Button(label="Ping", style=ButtonStyle.success, custom_id="ping"))
+            embed = discord.Embed(title="Market Financial Evaluation Assistant (MFEA)", color=discord.Color.blue())
+            embed.add_field(name="SPX Last Close", value=f"{last_close}", inline=False)
+            embed.add_field(name="SMA 220", value=f"{sma_220}", inline=False)
+            embed.add_field(name="Volatility (Annualized)", value=f"{volatility}%", inline=False)
+            embed.add_field(name="3M Treasury Rate", value=f"{treasury_rate}%", inline=False)
 
-        embed = discord.Embed(
-            title="Market Financial Evaluation Assistant (MFEA)",
-            description="Choose an option below:",
-            color=discord.Color.blue()
-        )
-        await message.channel.send(embed=embed, view=view)
+            # Recommendation logic
+            if last_close > sma_220:
+                if volatility < 14:
+                    recommendation = "Risk ON - 100% UPRO or 3x (100% SPY)"
+                elif volatility < 24:
+                    recommendation = "Risk MID - 100% SSO or 2x (100% SPY)"
+                else:
+                    if treasury_rate and treasury_rate < 4:
+                        recommendation = "Risk ALT - 25% UPRO + 75% ZROZ or 1.5x (50% SPY + 50% ZROZ)"
+                    else:
+                        recommendation = "Risk OFF - 100% SPY or 1x (100% SPY)"
+            else:
+                if treasury_rate and treasury_rate < 4:
+                    recommendation = "Risk ALT - 25% UPRO + 75% ZROZ or 1.5x (50% SPY + 50% ZROZ)"
+                else:
+                    recommendation = "Risk OFF - 100% SPY or 1x (100% SPY)"
+            
+            embed.add_field(name="MFEA Recommendation", value=recommendation, inline=False)
+            embed.set_footer(text="Use !commands for more options.")
+            await interaction.followup.send(embed=embed)
+        except ValueError as e:
+            await interaction.followup.send(f"Error fetching data: {e}")
+        except Exception as e:
+            await interaction.followup.send(f"An unexpected error occurred: {e}")
+    
+    @discord.ui.button(label="Commands", style=discord.ButtonStyle.green)
+    async def commands_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = discord.Embed(title="MFEA Bot Commands", color=discord.Color.green())
+        embed.add_field(name="!check", value="Fetches market data and provides recommendations.", inline=False)
+        embed.add_field(name="!commands", value="Shows this commands interface.", inline=False)
+        embed.add_field(name="!links", value="Provides a link to testfol.io.", inline=False)
+        embed.add_field(name="!ping", value="Checks if the bot is online and responsive.", inline=False)
+        await interaction.response.send_message(embed=embed)
 
-        async def button_callback(interaction):
-            if interaction.custom_id == "check":
-                await run_check(interaction)
-            elif interaction.custom_id == "commands":
-                await show_commands(interaction)
-            elif interaction.custom_id == "ping":
-                await interaction.response.send_message("Bot is ready!", ephemeral=True)
+    @discord.ui.button(label="Links", style=discord.ButtonStyle.link, url="https://testfol.io")
+    async def links_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        pass
 
-        # Assign callback to buttons
-        for button in view.children:
-            if isinstance(button, Button):
-                button.callback = button_callback
-    await bot.process_commands(message)
+    @discord.ui.button(label="Ping", style=discord.ButtonStyle.gray)
+    async def ping_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Bot is ready!")
 
-# Function to execute !check command
-async def run_check(interaction):
-    await interaction.response.defer()
+# Slash command to show the interface
+@bot.command(name="interface")
+async def interface(ctx):
+    view = MFEAView()
+    await ctx.send("Welcome to the MFEA bot interface. Select an option below:", view=view)
+
+# Legacy commands
+@bot.command()
+async def check(ctx):
+    await ctx.send("Fetching data... Please wait.")
     try:
         last_close, sma_220, volatility = fetch_sma_and_volatility()
         treasury_rate = fetch_treasury_rate()
@@ -116,21 +149,20 @@ async def run_check(interaction):
                 recommendation = "Risk OFF - 100% SPY or 1x (100% SPY)"
         
         embed.add_field(name="MFEA Recommendation", value=recommendation, inline=False)
-        embed.set_footer(text="Use @MFEA bot#3562 to interact again.")
-        await interaction.followup.send(embed=embed)
+        embed.set_footer(text="Try !commands for other commands.")
+        await ctx.send(embed=embed)
     except ValueError as e:
-        await interaction.followup.send(f"Error fetching data: {e}")
+        await ctx.send(f"Error fetching data: {e}")
     except Exception as e:
-        await interaction.followup.send(f"An unexpected error occurred: {e}")
+        await ctx.send(f"An unexpected error occurred: {e}")
 
-# Function to show commands
-async def show_commands(interaction):
-    embed = discord.Embed(title="MFEA Bot Commands", color=discord.Color.green())
-    embed.add_field(name="@MFEA bot#3562", value="Shows this interactive interface.", inline=False)
-    embed.add_field(name="Check Market Data", value="Fetches market data and provides recommendations.", inline=False)
-    embed.add_field(name="Links", value="Provides a link to testfol.io.", inline=False)
-    embed.add_field(name="Ping", value="Checks if the bot is online and responsive.", inline=False)
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+@bot.command()
+async def links(ctx):
+    await ctx.send("Check out [testfol.io](https://testfol.io) for more financial tools!")
+
+@bot.command()
+async def ping(ctx):
+    await ctx.send("Bot is ready!")
 
 # Flask setup for port binding
 app = Flask(__name__)
@@ -148,6 +180,6 @@ if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True  # Ensure Flask thread exits when the main program exits
     flask_thread.start()
-
+    
     # Start Discord bot
     bot.run(os.getenv("DISCORD_BOT_TOKEN"))
