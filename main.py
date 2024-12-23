@@ -1,6 +1,5 @@
 import discord
 from discord.ext import commands
-import threading
 import os
 
 # Discord bot setup
