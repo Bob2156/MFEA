@@ -1,6 +1,6 @@
-discord.py
-flask
-yfinance
-beautifulsoup4
-requests
-gunicorn
+discord.py==2.4.0
+flask==3.1.0
+yfinance==0.2.51
+beautifulsoup4==4.12.3
+requests==2.32.3
+gunicorn==23.0.0
