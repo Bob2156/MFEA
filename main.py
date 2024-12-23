@@ -4,6 +4,8 @@ import yfinance as yf
 import requests
 from bs4 import BeautifulSoup
 import os
+from flask import Flask
+import threading
 
 # Discord bot setup
 intents = discord.Intents.default()
@@ -104,6 +106,22 @@ async def links(ctx):
 async def ping(ctx):
     await ctx.send("Bot is ready!")
 
-if __name__ == "__main__":
-    bot.run(os.getenv("DISCORD_BOT_TOKEN"))
+# Flask setup for port binding
+app = Flask(__name__)
 
+@app.route("/")
+def home():
+    return "The bot is running!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))  # Default to 8080 if PORT is not set
+    app.run(host="0.0.0.0", port=port)
+
+if __name__ == "__main__":
+    # Start Flask server in a separate thread
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True  # Ensure Flask thread exits when the main program exits
+    flask_thread.start()
+    
+    # Start Discord bot
+    bot.run(os.getenv("DISCORD_BOT_TOKEN"))
