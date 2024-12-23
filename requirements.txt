@@ -3,3 +3,4 @@ flask
 yfinance
 beautifulsoup4
 requests
+gunicorn
