@@ -12,9 +12,16 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-@bot.event
-async def on_ready():
-    print(f"Logged in as {bot.user}")
+# Flask setup for port binding
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "The bot is running!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 8080))  # Default to 8080 if PORT is not set
+    app.run(host="0.0.0.0", port=port)
 
 # Function to fetch SMA and volatility
 def fetch_sma_and_volatility():
@@ -51,14 +58,14 @@ def fetch_treasury_rate():
             return round(float(rate_text), 2)
     raise ValueError("Failed to fetch treasury rate. Verify the source URL or HTML structure.")
 
-# Button-based interface
+# Discord UI for button-based interaction
 class MFEAView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-    
-    @discord.ui.button(label="Check Market Data", style=discord.ButtonStyle.blurple)
-    async def check_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
+
+    @discord.ui.button(label="Check Market Data", style=discord.ButtonStyle.primary)
+    async def check_market(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Fetching data... Please wait.", ephemeral=True)
         try:
             last_close, sma_220, volatility = fetch_sma_and_volatility()
             treasury_rate = fetch_treasury_rate()
@@ -87,37 +94,32 @@ class MFEAView(discord.ui.View):
                     recommendation = "Risk OFF - 100% SPY or 1x (100% SPY)"
             
             embed.add_field(name="MFEA Recommendation", value=recommendation, inline=False)
-            embed.set_footer(text="Use !commands for more options.")
+            embed.set_footer(text="Try !commands for other commands.")
             await interaction.followup.send(embed=embed)
         except ValueError as e:
-            await interaction.followup.send(f"Error fetching data: {e}")
+            await interaction.followup.send(f"Error fetching data: {e}", ephemeral=True)
         except Exception as e:
-            await interaction.followup.send(f"An unexpected error occurred: {e}")
-    
-    @discord.ui.button(label="Commands", style=discord.ButtonStyle.green)
-    async def commands_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+            await interaction.followup.send(f"An unexpected error occurred: {e}", ephemeral=True)
+
+    @discord.ui.button(label="Commands", style=discord.ButtonStyle.secondary)
+    async def commands(self, interaction: discord.Interaction, button: discord.ui.Button):
         embed = discord.Embed(title="MFEA Bot Commands", color=discord.Color.green())
         embed.add_field(name="!check", value="Fetches market data and provides recommendations.", inline=False)
         embed.add_field(name="!commands", value="Shows this commands interface.", inline=False)
         embed.add_field(name="!links", value="Provides a link to testfol.io.", inline=False)
         embed.add_field(name="!ping", value="Checks if the bot is online and responsive.", inline=False)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @discord.ui.button(label="Links", style=discord.ButtonStyle.link, url="https://testfol.io")
-    async def links_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def links(self, interaction: discord.Interaction, button: discord.ui.Button):
         pass
 
-    @discord.ui.button(label="Ping", style=discord.ButtonStyle.gray)
-    async def ping_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Bot is ready!")
+@bot.event
+async def on_message(message):
+    if bot.user.mentioned_in(message):
+        await message.channel.send("Select an option below:", view=MFEAView())
+    await bot.process_commands(message)
 
-# Slash command to show the interface
-@bot.command(name="interface")
-async def interface(ctx):
-    view = MFEAView()
-    await ctx.send("Welcome to the MFEA bot interface. Select an option below:", view=view)
-
-# Legacy commands
 @bot.command()
 async def check(ctx):
     await ctx.send("Fetching data... Please wait.")
@@ -157,23 +159,8 @@ async def check(ctx):
         await ctx.send(f"An unexpected error occurred: {e}")
 
 @bot.command()
-async def links(ctx):
-    await ctx.send("Check out [testfol.io](https://testfol.io) for more financial tools!")
-
-@bot.command()
 async def ping(ctx):
     await ctx.send("Bot is ready!")
-
-# Flask setup for port binding
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "The bot is running!"
-
-def run_flask():
-    port = int(os.environ.get("PORT", 8080))  # Default to 8080 if PORT is not set
-    app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     # Start Flask server in a separate thread
