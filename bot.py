@@ -5,6 +5,7 @@ from flask import Flask, request
 import yfinance as yf
 import requests
 from bs4 import BeautifulSoup
+import os
 
 # Flask web server to keep the bot alive
 app = Flask(__name__)
@@ -99,4 +100,4 @@ async def check(ctx):
 # Start the bot and Flask server
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
-    bot.run("MTMxOTc2MDYxOTQ3NzY2Nzg2MA.GUPzOp.a2j4FbnQm4UVOQxRRTTPHplF70Y-9M_hvQllLA")
+    bot.run(os.getenv("DISCORD_TOKEN"))
