@@ -19,7 +19,7 @@ def health_check():
     return "Bot is healthy!", 200
 
 def run_flask():
-    port = int(os.environ.get("PORT", 8080))  # Default to 8080 if PORT is not set
+    port = int(os.environ.get("PORT", 8080))  # Use $PORT or default to 8080
     app.run(host='0.0.0.0', port=port)
 
 # Function to fetch SMA and volatility
