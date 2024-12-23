@@ -102,4 +102,4 @@ async def check(ctx):
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
 bot.run(os.getenv("DISCORD_BOT_TOKEN"))
-
+app = app  # Expose the app object to Gunicorn
