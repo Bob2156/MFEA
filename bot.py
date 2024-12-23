@@ -62,6 +62,15 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
+@bot.event
+async def on_disconnect():
+    print("Bot disconnected from Discord")
+
+@bot.event
+async def on_resumed():
+    print("Bot reconnected to Discord")
+
+
 @bot.command()
 async def check(ctx):
     await ctx.send("Fetching data... Please wait.")
