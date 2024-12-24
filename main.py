@@ -40,8 +40,8 @@ def fetch_sma_and_volatility():
     except Exception as e:
         raise ValueError(f"Error fetching SMA and volatility: {e}")
 
-# Helper function to fetch treasury rate
-def fetch_treasury_rate():
+# Helper function to fetch treasury rate and determine trend
+def fetch_treasury_rate_and_trend():
     try:
         URL = "https://www.cnbc.com/quotes/US3M"
         response = requests.get(URL)
@@ -49,9 +49,14 @@ def fetch_treasury_rate():
             soup = BeautifulSoup(response.text, "html.parser")
             rate_element = soup.find("span", {"class": "QuoteStrip-lastPrice"})
             if rate_element:
-                rate_text = rate_element.text.strip()
-                if rate_text.endswith('%'):
-                    return round(float(rate_text[:-1]), 2)
+                current_rate = float(rate_element.text.strip('%'))
+
+                # Fetch historical data (mocked for this example, replace with real historical data if available)
+                historical_rate = current_rate - 0.05  # Assuming a small change for demo purposes
+
+                trend = "falling" if current_rate < historical_rate else "rising"
+                return round(current_rate, 2), trend
+
         raise ValueError("Failed to fetch treasury rate.")
     except Exception as e:
         raise ValueError(f"Error fetching treasury rate: {e}")
@@ -62,13 +67,13 @@ async def check(ctx):
     await ctx.send("Fetching data... Please wait.")
     try:
         last_close, sma_220, volatility = fetch_sma_and_volatility()
-        treasury_rate = fetch_treasury_rate()
+        treasury_rate, treasury_trend = fetch_treasury_rate_and_trend()
 
         embed = discord.Embed(title="Market Financial Evaluation Assistant (MFEA)", color=discord.Color.blue())
         embed.add_field(name="SPX Last Close", value=f"{last_close}", inline=False)
         embed.add_field(name="SMA 220", value=f"{sma_220}", inline=False)
         embed.add_field(name="Volatility (Annualized)", value=f"{volatility}%", inline=False)
-        embed.add_field(name="3M Treasury Rate", value=f"{treasury_rate}%", inline=False)
+        embed.add_field(name="3M Treasury Rate", value=f"{treasury_rate}% ({treasury_trend})", inline=False)
 
         # Recommendation logic
         if last_close > sma_220:
@@ -79,13 +84,13 @@ async def check(ctx):
             else:
                 recommendation = (
                     "Risk ALT - 25% UPRO + 75% ZROZ or 1.5x (50% SPY + 50% ZROZ)"
-                    if treasury_rate and treasury_rate < 4
+                    if treasury_trend == "falling"
                     else "Risk OFF - 100% SPY or 1x (100% SPY)"
                 )
         else:
             recommendation = (
                 "Risk ALT - 25% UPRO + 75% ZROZ or 1.5x (50% SPY + 50% ZROZ)"
-                if treasury_rate and treasury_rate < 4
+                if treasury_trend == "falling"
                 else "Risk OFF - 100% SPY or 1x (100% SPY)"
             )
 
@@ -125,20 +130,6 @@ def home():
 def health_check():
     return "OK", 200
 
-# Keep-alive ping thread
-def keep_alive():
-    while True:
-        try:
-            response = requests.head("http://127.0.0.1:10000/healthz")
-            if response.status_code == 200:
-                print(f"Keep-alive ping: {response.status_code}")
-            else:
-                print(f"Keep-alive ping failed: {response.status_code}")
-        except Exception as e:
-            print(f"Keep-alive ping error: {e}")
-        time.sleep(180)  # Ping every 3 minutes
-
-# Run Flask server
 def run_flask():
     port = int(os.environ.get("PORT", 8080))  # Default to 8080 if PORT is not set
     app.run(host="0.0.0.0", port=port)
@@ -148,11 +139,6 @@ if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True  # Ensure Flask thread exits with the main program
     flask_thread.start()
-
-    # Start keep-alive ping in a separate thread
-    keep_alive_thread = threading.Thread(target=keep_alive)
-    keep_alive_thread.daemon = True
-    keep_alive_thread.start()
 
     # Start Discord bot
     bot.run(os.getenv("DISCORD_BOT_TOKEN"))
