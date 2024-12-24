@@ -7,6 +7,17 @@ import os
 from flask import Flask
 import threading
 import time
+import logging
+import requests
+
+# Logging setup
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 
 # Discord bot setup
 intents = discord.Intents.default()
@@ -15,7 +26,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user}")
+    logging.info(f"Logged in as {bot.user}")
 
 # Helper function to fetch SMA and volatility
 def fetch_sma_and_volatility():
@@ -40,8 +51,8 @@ def fetch_sma_and_volatility():
     except Exception as e:
         raise ValueError(f"Error fetching SMA and volatility: {e}")
 
-# Helper function to fetch treasury rate and determine trend
-def fetch_treasury_rate_and_trend():
+# Helper function to fetch treasury rate
+def fetch_treasury_rate():
     try:
         URL = "https://www.cnbc.com/quotes/US3M"
         response = requests.get(URL)
@@ -49,14 +60,9 @@ def fetch_treasury_rate_and_trend():
             soup = BeautifulSoup(response.text, "html.parser")
             rate_element = soup.find("span", {"class": "QuoteStrip-lastPrice"})
             if rate_element:
-                current_rate = float(rate_element.text.strip('%'))
-
-                # Fetch historical data (mocked for this example, replace with real historical data if available)
-                historical_rate = current_rate - 0.05  # Assuming a small change for demo purposes
-
-                trend = "falling" if current_rate < historical_rate else "rising"
-                return round(current_rate, 2), trend
-
+                rate_text = rate_element.text.strip()
+                if rate_text.endswith('%'):
+                    return round(float(rate_text[:-1]), 2)
         raise ValueError("Failed to fetch treasury rate.")
     except Exception as e:
         raise ValueError(f"Error fetching treasury rate: {e}")
@@ -67,13 +73,13 @@ async def check(ctx):
     await ctx.send("Fetching data... Please wait.")
     try:
         last_close, sma_220, volatility = fetch_sma_and_volatility()
-        treasury_rate, treasury_trend = fetch_treasury_rate_and_trend()
+        treasury_rate = fetch_treasury_rate()
 
         embed = discord.Embed(title="Market Financial Evaluation Assistant (MFEA)", color=discord.Color.blue())
         embed.add_field(name="SPX Last Close", value=f"{last_close}", inline=False)
         embed.add_field(name="SMA 220", value=f"{sma_220}", inline=False)
         embed.add_field(name="Volatility (Annualized)", value=f"{volatility}%", inline=False)
-        embed.add_field(name="3M Treasury Rate", value=f"{treasury_rate}% ({treasury_trend})", inline=False)
+        embed.add_field(name="3M Treasury Rate", value=f"{treasury_rate}%", inline=False)
 
         # Recommendation logic
         if last_close > sma_220:
@@ -84,13 +90,13 @@ async def check(ctx):
             else:
                 recommendation = (
                     "Risk ALT - 25% UPRO + 75% ZROZ or 1.5x (50% SPY + 50% ZROZ)"
-                    if treasury_trend == "falling"
+                    if treasury_rate and treasury_rate < 4
                     else "Risk OFF - 100% SPY or 1x (100% SPY)"
                 )
         else:
             recommendation = (
                 "Risk ALT - 25% UPRO + 75% ZROZ or 1.5x (50% SPY + 50% ZROZ)"
-                if treasury_trend == "falling"
+                if treasury_rate and treasury_rate < 4
                 else "Risk OFF - 100% SPY or 1x (100% SPY)"
             )
 
@@ -119,7 +125,7 @@ async def links(ctx):
 async def ping(ctx):
     await ctx.send("Bot is ready!")
 
-# Flask setup for health checks
+# Flask setup for health checks and keep-alive
 app = Flask(__name__)
 
 @app.route("/")
@@ -130,6 +136,17 @@ def home():
 def health_check():
     return "OK", 200
 
+# Self-pinging function to keep Render service alive
+def keep_alive():
+    while True:
+        try:
+            url = f"http://127.0.0.1:{os.getenv('PORT', 8080)}/healthz"
+            response = requests.head(url)
+            logging.info(f"Keep-alive ping: {response.status_code}")
+        except Exception as e:
+            logging.error(f"Keep-alive error: {e}")
+        time.sleep(30)
+
 def run_flask():
     port = int(os.environ.get("PORT", 8080))  # Default to 8080 if PORT is not set
     app.run(host="0.0.0.0", port=port)
@@ -139,6 +156,11 @@ if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True  # Ensure Flask thread exits with the main program
     flask_thread.start()
+
+    # Start self-pinging in a separate thread
+    keep_alive_thread = threading.Thread(target=keep_alive)
+    keep_alive_thread.daemon = True
+    keep_alive_thread.start()
 
     # Start Discord bot
     bot.run(os.getenv("DISCORD_BOT_TOKEN"))
