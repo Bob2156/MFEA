@@ -4,7 +4,7 @@ import yfinance as yf
 import requests
 from bs4 import BeautifulSoup
 import os
-from flask import Flask
+from flask import Flask, request, jsonify
 import threading
 
 # Discord bot setup
@@ -55,72 +55,59 @@ def fetch_treasury_rate():
     except Exception as e:
         raise ValueError(f"Error fetching treasury rate: {e}")
 
-# Commands
-@bot.command()
-async def check(ctx):
-    await ctx.send("Fetching data... Please wait.")
-    try:
-        last_close, sma_220, volatility = fetch_sma_and_volatility()
-        treasury_rate = fetch_treasury_rate()
+# Flask setup for webhook
+app = Flask(__name__)
 
-        embed = discord.Embed(title="Market Financial Evaluation Assistant (MFEA)", color=discord.Color.blue())
-        embed.add_field(name="SPX Last Close", value=f"{last_close}", inline=False)
-        embed.add_field(name="SMA 220", value=f"{sma_220}", inline=False)
-        embed.add_field(name="Volatility (Annualized)", value=f"{volatility}%", inline=False)
-        embed.add_field(name="3M Treasury Rate", value=f"{treasury_rate}%", inline=False)
+@app.route("/", methods=["GET"])
+def home():
+    return "The bot webhook is running!"
 
-        # Recommendation logic
-        if last_close > sma_220:
-            if volatility < 14:
-                recommendation = "Risk ON - 100% UPRO or 3x (100% SPY)"
-            elif volatility < 24:
-                recommendation = "Risk MID - 100% SSO or 2x (100% SPY)"
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    data = request.json
+
+    if not data or "type" not in data:
+        return jsonify({"error": "Invalid payload."}), 400
+
+    if data["type"] == "check":
+        try:
+            last_close, sma_220, volatility = fetch_sma_and_volatility()
+            treasury_rate = fetch_treasury_rate()
+
+            recommendation = None
+            if last_close > sma_220:
+                if volatility < 14:
+                    recommendation = "Risk ON - 100% UPRO or 3x (100% SPY)"
+                elif volatility < 24:
+                    recommendation = "Risk MID - 100% SSO or 2x (100% SPY)"
+                else:
+                    recommendation = (
+                        "Risk ALT - 25% UPRO + 75% ZROZ or 1.5x (50% SPY + 50% ZROZ)"
+                        if treasury_rate and treasury_rate < 4
+                        else "Risk OFF - 100% SPY or 1x (100% SPY)"
+                    )
             else:
                 recommendation = (
                     "Risk ALT - 25% UPRO + 75% ZROZ or 1.5x (50% SPY + 50% ZROZ)"
                     if treasury_rate and treasury_rate < 4
                     else "Risk OFF - 100% SPY or 1x (100% SPY)"
                 )
-        else:
-            recommendation = (
-                "Risk ALT - 25% UPRO + 75% ZROZ or 1.5x (50% SPY + 50% ZROZ)"
-                if treasury_rate and treasury_rate < 4
-                else "Risk OFF - 100% SPY or 1x (100% SPY)"
-            )
 
-        embed.add_field(name="MFEA Recommendation", value=recommendation, inline=False)
-        embed.set_footer(text="Try !commands for other commands.")
-        await ctx.send(embed=embed)
-    except ValueError as e:
-        await ctx.send(f"Error: {e}")
-    except Exception as e:
-        await ctx.send(f"Unexpected error: {e}")
+            return jsonify({
+                "last_close": last_close,
+                "sma_220": sma_220,
+                "volatility": volatility,
+                "treasury_rate": treasury_rate,
+                "recommendation": recommendation
+            })
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            return jsonify({"error": "Unexpected error: " + str(e)}), 500
+    
+    return jsonify({"error": "Unknown request type."}), 400
 
-@bot.command(name="commands")
-async def commands_list(ctx):
-    embed = discord.Embed(title="MFEA Bot Commands", color=discord.Color.green())
-    embed.add_field(name="!check", value="Fetches market data and provides recommendations.", inline=False)
-    embed.add_field(name="!commands", value="Shows this commands interface.", inline=False)
-    embed.add_field(name="!links", value="Provides a link to testfol.io.", inline=False)
-    embed.add_field(name="!ping", value="Checks if the bot is online and responsive.", inline=False)
-    await ctx.send(embed=embed)
-
-@bot.command()
-async def links(ctx):
-    await ctx.send("Check out [testfol.io](https://testfol.io) for more financial tools!")
-
-@bot.command()
-async def ping(ctx):
-    await ctx.send("Bot is ready!")
-
-# Flask setup for health checks
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "The bot is running!"
-
-@app.route("/healthz", methods=["GET", "HEAD"])
+@app.route("/healthz", methods=["GET"])
 def health_check():
     return "OK", 200
 
