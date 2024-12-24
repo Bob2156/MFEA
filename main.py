@@ -8,7 +8,6 @@ from flask import Flask
 import threading
 import time
 import logging
-import requests
 
 # Logging setup
 logging.basicConfig(
