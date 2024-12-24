@@ -4,8 +4,20 @@ import yfinance as yf
 import requests
 from bs4 import BeautifulSoup
 import os
-from flask import Flask, request, jsonify
+from flask import Flask
 import threading
+import time
+import logging
+import requests
+
+# Logging setup
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 
 # Discord bot setup
 intents = discord.Intents.default()
@@ -14,7 +26,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user}")
+    logging.info(f"Logged in as {bot.user}")
 
 # Helper function to fetch SMA and volatility
 def fetch_sma_and_volatility():
@@ -55,137 +67,100 @@ def fetch_treasury_rate():
     except Exception as e:
         raise ValueError(f"Error fetching treasury rate: {e}")
 
-# Flask setup for webhook
-app = Flask(__name__)
+# Commands
+@bot.command()
+async def check(ctx):
+    await ctx.send("Fetching data... Please wait.")
+    try:
+        last_close, sma_220, volatility = fetch_sma_and_volatility()
+        treasury_rate = fetch_treasury_rate()
 
-@app.route("/", methods=["GET"])
-def home():
-    return "The bot webhook is running!"
+        embed = discord.Embed(title="Market Financial Evaluation Assistant (MFEA)", color=discord.Color.blue())
+        embed.add_field(name="SPX Last Close", value=f"{last_close}", inline=False)
+        embed.add_field(name="SMA 220", value=f"{sma_220}", inline=False)
+        embed.add_field(name="Volatility (Annualized)", value=f"{volatility}%", inline=False)
+        embed.add_field(name="3M Treasury Rate", value=f"{treasury_rate}%", inline=False)
 
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    data = request.json
-
-    if not data or "type" not in data:
-        return jsonify({"error": "Invalid payload."}), 400
-
-    if data["type"] == "check":
-        try:
-            last_close, sma_220, volatility = fetch_sma_and_volatility()
-            treasury_rate = fetch_treasury_rate()
-
-            recommendation = None
-            if last_close > sma_220:
-                if volatility < 14:
-                    recommendation = "Risk ON - 100% UPRO or 3x (100% SPY)"
-                elif volatility < 24:
-                    recommendation = "Risk MID - 100% SSO or 2x (100% SPY)"
-                else:
-                    recommendation = (
-                        "Risk ALT - 25% UPRO + 75% ZROZ or 1.5x (50% SPY + 50% ZROZ)"
-                        if treasury_rate and treasury_rate < 4
-                        else "Risk OFF - 100% SPY or 1x (100% SPY)"
-                    )
+        # Recommendation logic
+        if last_close > sma_220:
+            if volatility < 14:
+                recommendation = "Risk ON - 100% UPRO or 3x (100% SPY)"
+            elif volatility < 24:
+                recommendation = "Risk MID - 100% SSO or 2x (100% SPY)"
             else:
                 recommendation = (
                     "Risk ALT - 25% UPRO + 75% ZROZ or 1.5x (50% SPY + 50% ZROZ)"
                     if treasury_rate and treasury_rate < 4
                     else "Risk OFF - 100% SPY or 1x (100% SPY)"
                 )
-
-            return jsonify({
-                "last_close": last_close,
-                "sma_220": sma_220,
-                "volatility": volatility,
-                "treasury_rate": treasury_rate,
-                "recommendation": recommendation
-            })
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
-        except Exception as e:
-            return jsonify({"error": "Unexpected error: " + str(e)}), 500
-
-    elif data["type"] == "ping":
-        return jsonify({"response": "Bot is ready!"})
-
-    elif data["type"] == "commands":
-        return jsonify({
-            "commands": {
-                "!check": "Fetches market data and provides recommendations.",
-                "!commands": "Shows the list of commands.",
-                "!links": "Provides a link to testfol.io.",
-                "!ping": "Checks if the bot is online and responsive."
-            }
-        })
-
-    elif data["type"] == "links":
-        return jsonify({"link": "Check out [testfol.io](https://testfol.io) for more financial tools!"})
-
-    return jsonify({"error": "Unknown request type."}), 400
-
-@app.route("/healthz", methods=["GET"])
-def health_check():
-    return "OK", 200
-
-# Discord bot command handlers
-@bot.command()
-async def check(ctx):
-    response = requests.post("http://127.0.0.1:8080/webhook", json={"type": "check"})
-    if response.status_code == 200:
-        data = response.json()
-        if "error" in data:
-            await ctx.send(f"Error: {data['error']}")
         else:
-            embed = discord.Embed(title="Market Financial Evaluation Assistant (MFEA)", color=discord.Color.blue())
-            embed.add_field(name="SPX Last Close", value=f"{data['last_close']}", inline=False)
-            embed.add_field(name="SMA 220", value=f"{data['sma_220']}", inline=False)
-            embed.add_field(name="Volatility (Annualized)", value=f"{data['volatility']}%", inline=False)
-            embed.add_field(name="3M Treasury Rate", value=f"{data['treasury_rate']}%", inline=False)
-            embed.add_field(name="MFEA Recommendation", value=data['recommendation'], inline=False)
-            await ctx.send(embed=embed)
-    else:
-        await ctx.send("Error: Unable to fetch data.")
+            recommendation = (
+                "Risk ALT - 25% UPRO + 75% ZROZ or 1.5x (50% SPY + 50% ZROZ)"
+                if treasury_rate and treasury_rate < 4
+                else "Risk OFF - 100% SPY or 1x (100% SPY)"
+            )
 
-@bot.command()
-async def ping(ctx):
-    response = requests.post("http://127.0.0.1:8080/webhook", json={"type": "ping"})
-    if response.status_code == 200:
-        data = response.json()
-        await ctx.send(data.get("response", "No response from server."))
-    else:
-        await ctx.send("Error: Unable to reach the server.")
-
-@bot.command()
-async def commands(ctx):
-    response = requests.post("http://127.0.0.1:8080/webhook", json={"type": "commands"})
-    if response.status_code == 200:
-        data = response.json()
-        commands_list = data.get("commands", {})
-        embed = discord.Embed(title="MFEA Bot Commands", color=discord.Color.green())
-        for command, description in commands_list.items():
-            embed.add_field(name=command, value=description, inline=False)
+        embed.add_field(name="MFEA Recommendation", value=recommendation, inline=False)
+        embed.set_footer(text="Try !commands for other commands.")
         await ctx.send(embed=embed)
-    else:
-        await ctx.send("Error: Unable to fetch commands.")
+    except ValueError as e:
+        await ctx.send(f"Error: {e}")
+    except Exception as e:
+        await ctx.send(f"Unexpected error: {e}")
+
+@bot.command(name="commands")
+async def commands_list(ctx):
+    embed = discord.Embed(title="MFEA Bot Commands", color=discord.Color.green())
+    embed.add_field(name="!check", value="Fetches market data and provides recommendations.", inline=False)
+    embed.add_field(name="!commands", value="Shows this commands interface.", inline=False)
+    embed.add_field(name="!links", value="Provides a link to testfol.io.", inline=False)
+    embed.add_field(name="!ping", value="Checks if the bot is online and responsive.", inline=False)
+    await ctx.send(embed=embed)
 
 @bot.command()
 async def links(ctx):
-    response = requests.post("http://127.0.0.1:8080/webhook", json={"type": "links"})
-    if response.status_code == 200:
-        data = response.json()
-        await ctx.send(data.get("link", "No link available."))
-    else:
-        await ctx.send("Error: Unable to fetch link.")
+    await ctx.send("Check out [testfol.io](https://testfol.io) for more financial tools!")
 
-# Run Flask server in a separate thread
+@bot.command()
+async def ping(ctx):
+    await ctx.send("Bot is ready!")
+
+# Flask setup for health checks and keep-alive
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "The bot is running!"
+
+@app.route("/healthz", methods=["GET", "HEAD"])
+def health_check():
+    return "OK", 200
+
+# Self-pinging function to keep Render service alive
+def keep_alive():
+    while True:
+        try:
+            url = f"http://127.0.0.1:{os.getenv('PORT', 8080)}/healthz"
+            response = requests.head(url)
+            logging.info(f"Keep-alive ping: {response.status_code}")
+        except Exception as e:
+            logging.error(f"Keep-alive error: {e}")
+        time.sleep(30)
+
 def run_flask():
     port = int(os.environ.get("PORT", 8080))  # Default to 8080 if PORT is not set
     app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
+    # Start Flask server in a separate thread
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True  # Ensure Flask thread exits with the main program
     flask_thread.start()
+
+    # Start self-pinging in a separate thread
+    keep_alive_thread = threading.Thread(target=keep_alive)
+    keep_alive_thread.daemon = True
+    keep_alive_thread.start()
 
     # Start Discord bot
     bot.run(os.getenv("DISCORD_BOT_TOKEN"))
