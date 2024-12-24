@@ -104,19 +104,85 @@ def webhook():
             return jsonify({"error": str(e)}), 400
         except Exception as e:
             return jsonify({"error": "Unexpected error: " + str(e)}), 500
-    
+
+    elif data["type"] == "ping":
+        return jsonify({"response": "Bot is ready!"})
+
+    elif data["type"] == "commands":
+        return jsonify({
+            "commands": {
+                "!check": "Fetches market data and provides recommendations.",
+                "!commands": "Shows the list of commands.",
+                "!links": "Provides a link to testfol.io.",
+                "!ping": "Checks if the bot is online and responsive."
+            }
+        })
+
+    elif data["type"] == "links":
+        return jsonify({"link": "Check out [testfol.io](https://testfol.io) for more financial tools!"})
+
     return jsonify({"error": "Unknown request type."}), 400
 
 @app.route("/healthz", methods=["GET"])
 def health_check():
     return "OK", 200
 
+# Discord bot command handlers
+@bot.command()
+async def check(ctx):
+    response = requests.post("http://127.0.0.1:8080/webhook", json={"type": "check"})
+    if response.status_code == 200:
+        data = response.json()
+        if "error" in data:
+            await ctx.send(f"Error: {data['error']}")
+        else:
+            embed = discord.Embed(title="Market Financial Evaluation Assistant (MFEA)", color=discord.Color.blue())
+            embed.add_field(name="SPX Last Close", value=f"{data['last_close']}", inline=False)
+            embed.add_field(name="SMA 220", value=f"{data['sma_220']}", inline=False)
+            embed.add_field(name="Volatility (Annualized)", value=f"{data['volatility']}%", inline=False)
+            embed.add_field(name="3M Treasury Rate", value=f"{data['treasury_rate']}%", inline=False)
+            embed.add_field(name="MFEA Recommendation", value=data['recommendation'], inline=False)
+            await ctx.send(embed=embed)
+    else:
+        await ctx.send("Error: Unable to fetch data.")
+
+@bot.command()
+async def ping(ctx):
+    response = requests.post("http://127.0.0.1:8080/webhook", json={"type": "ping"})
+    if response.status_code == 200:
+        data = response.json()
+        await ctx.send(data.get("response", "No response from server."))
+    else:
+        await ctx.send("Error: Unable to reach the server.")
+
+@bot.command()
+async def commands(ctx):
+    response = requests.post("http://127.0.0.1:8080/webhook", json={"type": "commands"})
+    if response.status_code == 200:
+        data = response.json()
+        commands_list = data.get("commands", {})
+        embed = discord.Embed(title="MFEA Bot Commands", color=discord.Color.green())
+        for command, description in commands_list.items():
+            embed.add_field(name=command, value=description, inline=False)
+        await ctx.send(embed=embed)
+    else:
+        await ctx.send("Error: Unable to fetch commands.")
+
+@bot.command()
+async def links(ctx):
+    response = requests.post("http://127.0.0.1:8080/webhook", json={"type": "links"})
+    if response.status_code == 200:
+        data = response.json()
+        await ctx.send(data.get("link", "No link available."))
+    else:
+        await ctx.send("Error: Unable to fetch link.")
+
+# Run Flask server in a separate thread
 def run_flask():
     port = int(os.environ.get("PORT", 8080))  # Default to 8080 if PORT is not set
     app.run(host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
-    # Start Flask server in a separate thread
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True  # Ensure Flask thread exits with the main program
     flask_thread.start()
