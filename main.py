@@ -7,17 +7,6 @@ import os
 from flask import Flask
 import threading
 import time
-import logging
-import requests
-
-# Logging setup
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
 
 # Discord bot setup
 intents = discord.Intents.default()
@@ -26,7 +15,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    logging.info(f"Logged in as {bot.user}")
+    print(f"Logged in as {bot.user}")
 
 # Helper function to fetch SMA and volatility
 def fetch_sma_and_volatility():
@@ -125,7 +114,7 @@ async def links(ctx):
 async def ping(ctx):
     await ctx.send("Bot is ready!")
 
-# Flask setup for health checks and keep-alive
+# Flask setup for health checks
 app = Flask(__name__)
 
 @app.route("/")
@@ -136,17 +125,20 @@ def home():
 def health_check():
     return "OK", 200
 
-# Self-pinging function to keep Render service alive
+# Keep-alive ping thread
 def keep_alive():
     while True:
         try:
-            url = f"http://127.0.0.1:{os.getenv('PORT', 8080)}/healthz"
-            response = requests.head(url)
-            logging.info(f"Keep-alive ping: {response.status_code}")
+            response = requests.head("http://127.0.0.1:10000/healthz")
+            if response.status_code == 200:
+                print(f"Keep-alive ping: {response.status_code}")
+            else:
+                print(f"Keep-alive ping failed: {response.status_code}")
         except Exception as e:
-            logging.error(f"Keep-alive error: {e}")
-        time.sleep(30)
+            print(f"Keep-alive ping error: {e}")
+        time.sleep(180)  # Ping every 3 minutes
 
+# Run Flask server
 def run_flask():
     port = int(os.environ.get("PORT", 8080))  # Default to 8080 if PORT is not set
     app.run(host="0.0.0.0", port=port)
@@ -157,7 +149,7 @@ if __name__ == "__main__":
     flask_thread.daemon = True  # Ensure Flask thread exits with the main program
     flask_thread.start()
 
-    # Start self-pinging in a separate thread
+    # Start keep-alive ping in a separate thread
     keep_alive_thread = threading.Thread(target=keep_alive)
     keep_alive_thread.daemon = True
     keep_alive_thread.start()
